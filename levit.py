@@ -9,6 +9,8 @@ import torch
 import itertools
 import utils
 
+import torch.autograd.profiler as profiler
+
 from timm.models.vision_transformer import trunc_normal_
 from timm.models.registry import register_model
 
@@ -521,6 +523,30 @@ def export_onnx(net, dummy_input, filename="default", print_onnx = False):
     onnx.save(model_simp, filename + "_simplified.onnx")
 
 
+def print_profiling_CPU(net, dummy_input, export_trace = False, filename = ""):
+    with profiler.profile(use_cpu=True, record_shapes=True) as prof:
+        with profiler.record_function("model_inference"):
+            net(dummy_input)
+
+    print(prof.key_averages().table(sort_by='self_cpu_time_total'))
+
+    if export_trace:
+        prof.export_chrome_trace(f"nets-dump/{filename}-CPU-chrome-export.json")
+
+
+def print_profiling_CUDA(net, dummy_input, export_trace = False, filename = ""):
+    net_cuda = net.cuda()
+    dummy_input_cuda = dummy_input.cuda()
+    with profiler.profile(use_cuda=True, record_shapes=True) as prof:
+        with profiler.record_function("model_inference"):
+            net_cuda(dummy_input_cuda)
+
+    print(prof.key_averages().table(sort_by='self_cpu_time_total'))
+
+    if export_trace:
+        prof.export_chrome_trace(f"nets-dump/{filename}-CUDA-chrome-export.json")
+
+
 if __name__ == '__main__':
     net = LeViT_256(fuse=True, pretrained=True)
     net.eval()
@@ -529,3 +555,5 @@ if __name__ == '__main__':
     net(dummy_input)
 
     export_onnx(net, dummy_input, "levit_256")
+    print_profiling_CPU(net, dummy_input, export_trace=True, filename="levit_256")
+
