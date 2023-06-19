@@ -12,6 +12,12 @@ import utils
 from timm.models.vision_transformer import trunc_normal_
 from timm.models.registry import register_model
 
+import onnx
+from onnx import shape_inference
+from onnxsim import simplify
+
+import os
+
 specification = {
     'LeViT_128S': {
         'C': '128_256_384', 'D': 16, 'N': '4_6_8', 'X': '2_3_4', 'drop_path': 0,
@@ -494,11 +500,32 @@ def model_factory(C, D, X, N, drop_path, weights,
     return model
 
 
+def export_onnx(net, dummy_input, filename="default", print_onnx = False):
+    path = os.path.join(".", "nets-dump")
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    filename = os.path.join(path, filename)
+
+    torch.onnx.export(net, dummy_input, filename + ".onnx", input_names=['input'], output_names=['output'])
+    net_onnx = onnx.load(filename + ".onnx")
+
+    net_onnx = shape_inference.infer_shapes(net_onnx)
+
+    model_simp, check = simplify(net_onnx)
+    assert check, "Simplified ONNX model could not be validated"
+
+    if print_onnx:
+        print('Model :\n\n{}'.format(onnx.helper.printable_graph(net_onnx.graph)))
+
+    onnx.save(model_simp, filename + "_simplified.onnx")
+
+
 if __name__ == '__main__':
-    for name in specification:
-        net = globals()[name](fuse=True, pretrained=True)
-        net.eval()
-        net(torch.randn(4, 3, 224, 224))
-        print(name,
-              net.FLOPS, 'FLOPs',
-              sum(p.numel() for p in net.parameters() if p.requires_grad), 'parameters')
+    net = LeViT_256(fuse=True, pretrained=True)
+    net.eval()
+
+    dummy_input = torch.randn(1, 3, 224, 224)
+    net(dummy_input)
+
+    export_onnx(net, dummy_input, "levit_256")
