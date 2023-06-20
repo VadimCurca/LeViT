@@ -8,6 +8,8 @@
 import torch
 import itertools
 import utils
+import numpy as np
+import time
 
 import torch.autograd.profiler as profiler
 
@@ -547,13 +549,45 @@ def print_profiling_CUDA(net, dummy_input, export_trace = False, filename = ""):
         prof.export_chrome_trace(f"nets-dump/{filename}-CUDA-chrome-export.json")
 
 
+def performance_CPU(model, x):
+    cpu_times = []
+
+    for epoch in range(100):
+        t0 = time.perf_counter()
+        output = model(x)
+        t1 = time.perf_counter()
+        cpu_times.append(t1 - t0)
+
+    print('CPU {}'.format(
+        torch.tensor(cpu_times).mean()))
+
+
+def performance_CUDA(model, x):
+    device = 'cuda'
+    model = model.to(device)
+    x = x.to(device)
+    torch.cuda.synchronize()
+
+    gpu_times = []
+    for epoch in range(100):
+        torch.cuda.synchronize()
+        t0 = time.perf_counter()
+        output = model(x)
+        torch.cuda.synchronize()
+        t1 = time.perf_counter()
+        gpu_times.append(t1 - t0)
+
+    print('GPU {}'.format(
+        torch.tensor(gpu_times).mean()))
+
 if __name__ == '__main__':
-    net = LeViT_256(fuse=True, pretrained=True)
-    net.eval()
+    net = LeViT_256(fuse=True, pretrained=False)
 
     dummy_input = torch.randn(1, 3, 224, 224)
     net(dummy_input)
 
-    export_onnx(net, dummy_input, "levit_256")
-    print_profiling_CPU(net, dummy_input, export_trace=True, filename="levit_256")
+    performance_CPU(net, dummy_input)
 
+    # performance_CUDA(net, dummy_input)
+    # export_onnx(net, dummy_input, "levit_256")
+    # print_profiling_CPU(net, dummy_input, export_trace=True, filename="levit_256")
